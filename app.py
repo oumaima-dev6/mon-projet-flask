@@ -4,19 +4,23 @@ import numpy as np
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
-# Charger les variables d'environnement
+# Load environment variables
 load_dotenv()
 
-# Récupérer le token depuis le fichier .env
-SECRET_TOKEN = os.getenv('SECRET_TOKEN')
-
-# Initialiser l'application Flask
 app = Flask(__name__)
 
-# Charger le modèle
-model = joblib.load('stroke_model (1).pkl')
+# Configuration from .env
+SECRET_TOKEN = os.getenv('SECRET_TOKEN')
+MODEL_PATH = os.getenv('MODEL_PATH', 'stroke_model.pkl')  # Default fallback
+PREDICTION_THRESHOLD = float(os.getenv('PREDICTION_THRESHOLD', 0.35))
+PORT = int(os.getenv('PORT', 5000))  # Default port 5000 if not specified
 
-# Les 12 variables d’entrée attendues par le modèle
+# Load model with error handling
+try:
+    model = joblib.load(MODEL_PATH)
+except Exception as e:
+    raise RuntimeError(f"Failed to load model from {MODEL_PATH}: {str(e)}")
+
 expected_features = [
     "Disease Free (Months)",
     "Person Neoplasm Status_WITH TUMOR",
@@ -32,49 +36,46 @@ expected_features = [
     "UICC TNM Tumor Stage Code_T3b"
 ]
 
-@app.route('/')
-def home():
-    return "✅ API de prédiction du risque d'AVC post-opératoire prête"
+# @app.route('/')
+# def home():
+#     return "✅ Stroke Prediction API Ready"
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    # Récupérer le header Authorization
+    # Token check
     auth_header = request.headers.get('Authorization')
-
-    # Vérifier le format "Bearer <token>"
     if not auth_header or not auth_header.startswith('Bearer '):
-        return jsonify({'error': 'Unauthorized: token manquant ou mal formaté'}), 401
+        return jsonify({'error': 'Missing or malformed token'}), 401
+    
+    if auth_header.split(' ')[1] != SECRET_TOKEN:
+        return jsonify({'error': 'Invalid token'}), 401
 
-    # Extraire le token réel
-    token = auth_header.split(' ')[1]
+    # Input validation
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    data = request.get_json()
+    # print(data)
+    missing = [f for f in expected_features if f not in data]
+    if missing:
+        return jsonify({'error': f'Missing fields: {missing}'}), 400
 
-    # Vérifier que le token correspond à celui attendu
-    if token != SECRET_TOKEN:
-        return jsonify({'error': 'Unauthorized: token invalide'}), 401
-
+    # Prediction
     try:
-        data = request.get_json()
-
-        # Vérifier les champs manquants
-        missing = [f for f in expected_features if f not in data]
-        if missing:
-            return jsonify({'error': f'Champs manquants : {missing}'}), 400
-
-        # Préparer les données
         input_data = [data[feature] for feature in expected_features]
         input_array = np.array(input_data).reshape(1, -1)
-
-        # Prédiction
         proba = model.predict_proba(input_array)[0][1]
-        prediction = int(proba >= 0.35)
-
+        
         return jsonify({
-            'prediction': prediction,
-            'probability': round(proba, 3)
+            'prediction': int(proba >= PREDICTION_THRESHOLD),
+            'probability': round(proba, 3),
+            'threshold_used': PREDICTION_THRESHOLD
         })
-
+    
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Only for development
+    app.run(host='0.0.0.0', port=PORT, debug=os.getenv('FLASK_DEBUG') == 'True')
+    # app.run(debug=os.getenv('FLASK_DEBUG', False))
