@@ -3,6 +3,9 @@ import joblib
 import numpy as np
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+import requests
+import time
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # Load environment variables
 load_dotenv()
@@ -74,6 +77,27 @@ def predict():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+# Background scheduler to reload the website every 14 minutes
+MAX_RETRIES = 3  # Maximum number of retries
+RETRY_DELAY = 5  # Delay between retries in seconds
+
+def reload_website():
+    retries = 0
+    while retries < MAX_RETRIES:
+        try:
+            response = requests.get("https://mon-projet-flask-6.onrender.com/")
+            print(f"Reloaded at {response.status_code}: {response.reason}")
+            return  # Exit the function if successful
+        except requests.RequestException as e:
+            print(f"Error reloading (attempt {retries + 1}): {e}")
+            retries += 1
+            time.sleep(RETRY_DELAY)
+    print("All retry attempts failed. Will try again in the next cycle.")
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(reload_website, 'interval', minutes=14)
+scheduler.start()
 
 if __name__ == '__main__':
     # Only for development
