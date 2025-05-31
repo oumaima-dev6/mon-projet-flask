@@ -36,9 +36,9 @@ expected_features = [
     "UICC TNM Tumor Stage Code_T3b"
 ]
 
-# @app.route('/')
-# def home():
-#     return "✅ Stroke Prediction API Ready"
+@app.route('/')
+def home():
+     return "✅ Stroke Prediction API Ready"
 
 @app.route('/predict', methods=['POST'])
 def predict():
